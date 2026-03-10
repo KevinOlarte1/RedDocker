@@ -46,6 +46,29 @@ services:
       SERVICE_NAME: hiveserver2
     networks:
       - red-docker
+
+  datos-1:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datos-1
+    hostname: datos-1
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://Nodo-principal:9000
+    depends_on:
+      - Nodo-principal
+    networks:
+      - red-docker
+
+  datos-2:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datos-2
+    hostname: datos-2
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://Nodo-principal:9000
+    depends_on:
+      - Nodo-principal
+    networks:
+      - red-docker
+
 networks:
   red-docker:
     name: red-docker
