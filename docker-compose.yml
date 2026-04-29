@@ -5,8 +5,9 @@ services:
     container_name: Nodo-principal
     hostname: Nodo-principal
     ports:
-      - "9871:9871"
-      - "9001:9001"
+      - "50070:9870"
+      - "8088:8088"
+      - "9000:9000"
     environment:
       - CLUSTER_NAME=test
       - CORE_CONF_fs_defaultFS=hdfs://Nodo-principal:9000
@@ -41,8 +42,8 @@ services:
     container_name: hive
     hostname: hive
     ports:
-      - "10001:10001"
-      - "10003:10003"
+      - "10000:10000"
+      - "10002:10002"
     environment:
       SERVICE_NAME: hiveserver2
     networks:
@@ -70,6 +71,55 @@ services:
     networks:
       - red-docker
 
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    hostname: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - red-docker
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    hostname: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - red-docker
+
+  node-exporter:
+    image: prom/node-exporter
+    container_name: node-exporter
+    hostname: node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - red-docker
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    hostname: cadvisor
+    ports:
+      - "8089:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - red-docker
+
 networks:
   red-docker:
     name: red-docker
@@ -78,3 +128,5 @@ networks:
 volumes:
   namenode:
   mysql_data:
+  prometheus_data:
+  grafana_data:

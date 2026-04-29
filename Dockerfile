@@ -17,3 +17,8 @@ ADD https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-conne
 # 4. Configurar las variables de entorno para siempre
 ENV PATH=$PATH:/usr/local/sqoop/bin
 ENV HADOOP_CLASSPATH="/usr/local/sqoop/lib/*"
+
+COPY start-hadoop.sh /start-hadoop.sh
+RUN chmod +x /start-hadoop.sh
+
+CMD ["/start-hadoop.sh"]
