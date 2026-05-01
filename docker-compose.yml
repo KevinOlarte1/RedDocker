@@ -1,6 +1,6 @@
 services:
   Nodo-principal:
-    build: .
+    build: ./hadoop-sqoop
     image: hadoop-con-sqoop
     container_name: Nodo-principal
     hostname: Nodo-principal
@@ -21,7 +21,7 @@ services:
       - red-docker
 
   mysql-practica:
-    image: mysql:8.0
+    build: ./mysql
     container_name: mysql-practica
     hostname: mysql-practica
     restart: unless-stopped
