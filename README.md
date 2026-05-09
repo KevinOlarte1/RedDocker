@@ -57,32 +57,9 @@ El clúster está compuesto por **10 contenedores** distribuidos en una red brid
 
 ### Diagrama de arquitectura
 
-```
-                        ┌─────────────────────────────────────────────────┐
-                        │                  red-docker                     │
-                        │                                                 │
-  ┌──────────────┐      │   ┌─────────────────┐    ┌──────────────────┐  │
-  │    Cliente   │      │   │  Nodo-principal  │    │   mysql-practica │  │
-  │  (navegador) │──────┼──►│  NameNode        │    │   MySQL 8.0      │  │
-  └──────────────┘      │   │  ResourceManager │◄───│   puerto 3306    │  │
-                        │   │  Sqoop 1.4.7     │    └──────────────────┘  │
-                        │   │  puerto 9870     │                          │
-                        │   │  puerto 8088     │                          │
-                        │   └────────┬─────────┘                         │
-                        │            │ HDFS replication=2                 │
-                        │     ┌──────┴──────┐                            │
-                        │     ▼             ▼                            │
-                        │  ┌───────┐   ┌───────┐                        │
-                        │  │datos-1│   │datos-2│                        │
-                        │  │DataN. │   │DataN. │                        │
-                        │  └───────┘   └───────┘                        │
-                        │                                                 │
-                        │   ┌──────┐  ┌──────────┐  ┌─────────┐        │
-                        │   │ hive │  │prometheus│  │ grafana │        │
-                        │   │10000 │  │  :9090   │  │  :3000  │        │
-                        │   └──────┘  └──────────┘  └─────────┘        │
-                        └─────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="./resource/reddocker_architecture_diagram.svg" alt="Arquitectura RedDocker" width="700"/>
+</p>
 
 ### Descripción de contenedores
 
