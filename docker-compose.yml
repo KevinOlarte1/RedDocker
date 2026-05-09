@@ -15,6 +15,7 @@ services:
       - HDFS_CONF_dfs_webhdfs_enabled=true
       - HDFS_CONF_dfs_permissions_enabled=false
       - HDFS_CONF_dfs_namenode_datanode_registration_ip___hostname___check=false
+      - HDFS_CONF_dfs_replication=2
     volumes:
       - namenode:/hadoop/dfs/name
     networks:
@@ -45,14 +46,9 @@ services:
       - "10000:10000"
       - "10002:10002"
     environment:
-      SERVICE_NAME: hiveserver2
-  HIVE_METASTORE_DB_TYPE: mysql
-  HIVE_METASTORE_HOST: mysql-practica
-  HIVE_METASTORE_PORT: 3306
-  HIVE_METASTORE_USER: root
-  HIVE_METASTORE_PASSWORD: root1234
+      - SERVICE_NAME=hiveserver2
     volumes:
-      - hive-metastore:/opt/hive/metastore_db
+      - hive-data:/opt/hive
     networks:
       - red-docker
 
@@ -135,6 +131,6 @@ networks:
 volumes:
   namenode:
   mysql_data:
-  hive-metastore:
+  hive-data:
   prometheus_data:
   grafana_data:

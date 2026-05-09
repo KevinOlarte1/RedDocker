@@ -19,6 +19,9 @@ ENV PATH=$PATH:/usr/local/sqoop/bin
 ENV HADOOP_CLASSPATH="/usr/local/sqoop/lib/*"
 
 COPY ./scripts/start-hadoop.sh /start-hadoop.sh
+COPY scripts/importarMYSQL.sh /importarMYSQL.sh
+
 RUN chmod +x /start-hadoop.sh
+RUN chmod +x /importarMYSQL.sh
 
 CMD ["/start-hadoop.sh"]
