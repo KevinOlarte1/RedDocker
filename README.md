@@ -33,7 +33,7 @@ El proyecto implementa un pipeline **ETL** (Extract, Transform, Load) completo s
 ### Flujo ETL
 
 ```
-┌─────────┐    Sqoop     ┌──────┐    Hive     ┌──────┐
+┌─────────┐    Sqoop    ┌──────┐    Hive     ┌──────┐
 │  MySQL  │ ──────────► │ HDFS │ ──────────► │ Hive │
 │  (raw)  │   import    │      │   external  │      │
 └─────────┘             └──────┘    table    └──────┘
@@ -88,7 +88,7 @@ El clúster está compuesto por **10 contenedores** distribuidos en una red brid
 
 | Contenedor | Imagen base | Rol | Puertos expuestos |
 |---|---|---|---|
-| `Nodo-principal` | `bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8` + Sqoop | **NameNode** + **ResourceManager** + **Sqoop** | `9870`, `8088`, `9000` |
+| `Nodo-principal` | `bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8` + Sqoop | **NameNode** + **ResourceManager** + **Sqoop** | `50070`, `8088`, `9000` |
 | `datos-1` | `bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8` | **DataNode #1** — almacena bloques HDFS | — |
 | `datos-2` | `bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8` | **DataNode #2** — almacena bloques HDFS | — |
 | `mysql-practica` | `mysql:8.0` + Python 3 | **Base de datos relacional** con datos energéticos | `3306` |
@@ -112,7 +112,7 @@ El clúster está compuesto por **10 contenedores** distribuidos en una red brid
 - Scripts de carga (`02-load-data.sh`) y generación de datos (`generar_dades.py`)
 
 **`hive/Dockerfile`** — Extiende la imagen oficial de Apache Hive 4.0.0 añadiendo:
-- Scripts de migración (`migrarEjecutor.sh`, `migrarHDFS.sql`) copiados a `/opt/scripts/`
+- Scripts de migración (`migrarEjecutor.sh`, `migrarHDFS.sql`) copiados a `/opt/scripts/` y `/`
 
 ---
 
@@ -210,12 +210,13 @@ Todos los servicios deben aparecer con estado `running`. Puedes acceder a las in
 | Grafana | http://localhost:3000 |
 | Prometheus | http://localhost:9090 |
 | HiveServer2 | `localhost:10000` (JDBC) |
+| Mysql | `localhost:3306` (JDBC) |
 
 ---
 
 ## ⚙️ Configuración inicial paso a paso
 
-> ⚠️ **Importante:** Los tres pasos siguientes deben ejecutarse **en orden** y solo la primera vez que se levanta el clúster, o después de eliminar los volúmenes con `docker compose down -v`.
+> ⚠️ **Importante:** Los tres pasos siguientes deben ejecutarse **en orden** y solo la primera vez que se levanta el clúster, o después de eliminar los volúmenes con `docker compose down -v`. El unico que se debe ejecutar cada vez que se lanza es el /migrarEjecutor.sh de hive
 
 ---
 
@@ -322,7 +323,7 @@ docker exec -it hive bash
 **3.2 — Ejecutar el script de migración:**
 
 ```bash
-bash /opt/scripts/migrarEjecutor.sh
+bash /migrarEjecutor.sh
 ```
 
 El script `migrarEjecutor.sh` orquesta las siguientes operaciones (definidas en `migrarHDFS.sql`):
