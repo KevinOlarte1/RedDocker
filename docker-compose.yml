@@ -39,7 +39,9 @@ services:
       - red-docker
 
   hive:
-    image: apache/hive:4.0.0
+    build:
+      context: ./hive
+      dockerfile: Dockerfile
     container_name: hive
     hostname: hive
     ports:
@@ -47,8 +49,6 @@ services:
       - "10002:10002"
     environment:
       - SERVICE_NAME=hiveserver2
-    volumes:
-      - hive-data:/opt/hive
     networks:
       - red-docker
 
@@ -131,6 +131,5 @@ networks:
 volumes:
   namenode:
   mysql_data:
-  hive-data:
   prometheus_data:
   grafana_data:
