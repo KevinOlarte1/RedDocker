@@ -28,7 +28,7 @@ if not dades_base:
     print("No hi ha dades base en generacion_energia.")
     exit()
 
-registres_a_crear = 100
+registres_a_crear = 1000000
 
 for _ in range(registres_a_crear):
     fila = random.choice(dades_base)
