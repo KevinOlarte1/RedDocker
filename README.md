@@ -279,6 +279,11 @@ docker exec -it Nodo-principal bash
 ```bash
 bash /importarMYSQL.sh
 ```
+> [!WARNING]
+> Puede dar error por hdfs no deja ecribir
+> ```bash
+>  hdfs dfsadmin -safemode leave
+> ```
 
 El script `importarMYSQL.sh` realiza automáticamente las siguientes operaciones:
 
