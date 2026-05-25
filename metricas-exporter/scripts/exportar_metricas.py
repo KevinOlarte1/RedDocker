@@ -19,9 +19,9 @@ WEBHDFS_URL = os.getenv(
     "WEBHDFS_URL", "http://Nodo-principal:9870/webhdfs/v1"
 ).rstrip("/")
 HDFS_BASE_PATH = os.getenv("HDFS_BASE_PATH", "/metricas/prometheus").rstrip("/")
-WINDOW_SECONDS = int(os.getenv("EXPORT_WINDOW_SECONDS", "900"))
-STEP_SECONDS = int(os.getenv("EXPORT_STEP_SECONDS", "60"))
-INTERVAL_SECONDS = int(os.getenv("EXPORT_INTERVAL_SECONDS", "900"))
+WINDOW_SECONDS = int(os.getenv("EXPORT_WINDOW_SECONDS", "300"))
+STEP_SECONDS = int(os.getenv("EXPORT_STEP_SECONDS", "1"))
+INTERVAL_SECONDS = int(os.getenv("EXPORT_INTERVAL_SECONDS", "300"))
 STARTUP_DELAY_SECONDS = int(os.getenv("EXPORT_STARTUP_DELAY_SECONDS", "10"))
 RETRY_SECONDS = int(os.getenv("EXPORT_RETRY_SECONDS", "30"))
 HDFS_USER = os.getenv("HDFS_USER", "root")

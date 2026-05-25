@@ -12,7 +12,21 @@ COPY scripts/crearMetricasHive.sql /opt/scripts/crearMetricasHive.sql
 COPY scripts/consultasMetricasHistoricas.sql /opt/scripts/consultasMetricasHistoricas.sql
 COPY scripts/crearMetricasHive.sh /crearMetricasHive.sh
 COPY scripts/consultarMetricasHistoricas.sh /consultarMetricasHistoricas.sh
+COPY scripts/crearPrediccionesHive.sql /opt/scripts/crearPrediccionesHive.sql
+COPY scripts/consultasPredicciones.sql /opt/scripts/consultasPredicciones.sql
+COPY scripts/crearPrediccionesHive.sh /crearPrediccionesHive.sh
+COPY scripts/consultarPredicciones.sh /consultarPredicciones.sh
 
-# Dar permisos
-RUN chmod +x /migrarEjecutor.sh
-RUN chmod +x /crearMetricasHive.sh /consultarMetricasHistoricas.sh
+# Normalizar scripts creados desde Windows antes de ejecutarlos en Linux.
+RUN sed -i 's/\r$//' \
+      /migrarEjecutor.sh \
+      /crearMetricasHive.sh \
+      /consultarMetricasHistoricas.sh \
+      /crearPrediccionesHive.sh \
+      /consultarPredicciones.sh && \
+    chmod +x \
+      /migrarEjecutor.sh \
+      /crearMetricasHive.sh \
+      /consultarMetricasHistoricas.sh \
+      /crearPrediccionesHive.sh \
+      /consultarPredicciones.sh

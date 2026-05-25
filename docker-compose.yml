@@ -96,13 +96,29 @@ services:
       - WEBHDFS_URL=http://Nodo-principal:9870/webhdfs/v1
       - HDFS_BASE_PATH=/metricas/prometheus
       - EXPORT_CONTAINERS=Nodo-principal|mysql-practica|hive|datos-1|datos-2
-      - EXPORT_WINDOW_SECONDS=900
-      - EXPORT_STEP_SECONDS=60
-      - EXPORT_INTERVAL_SECONDS=900
+      - EXPORT_WINDOW_SECONDS=300
+      - EXPORT_STEP_SECONDS=1
+      - EXPORT_INTERVAL_SECONDS=300
       - EXPORT_STARTUP_DELAY_SECONDS=10
       - EXPORT_RETRY_SECONDS=30
     depends_on:
       - prometheus
+      - Nodo-principal
+    networks:
+      - red-docker
+
+  prediccion-r:
+    build: ./prediccion-r
+    profiles:
+      - prediccion
+    environment:
+      - WEBHDFS_URL=http://Nodo-principal:9870/webhdfs/v1
+      - HDFS_INPUT_PATH=/metricas/prometheus
+      - HDFS_OUTPUT_PATH=/metricas/predicciones_cpu
+      - PREDICTION_HORIZON_STEPS=15
+      - PREDICTION_STEP_SECONDS=60
+      - PREDICTION_MIN_SAMPLES=5
+    depends_on:
       - Nodo-principal
     networks:
       - red-docker

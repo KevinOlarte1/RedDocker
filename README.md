@@ -1,6 +1,6 @@
 # 🐳 RedDocker — Arquitectura Big Data Distribuida con Docker
 
-> Práctica universitaria de Big Data: pipeline ETL completo sobre un clúster Hadoop distribuido, orquestado con Docker Compose.
+> Práctica universitaria de Big Data: pipeline ETL, observabilidad histórica y predicción de CPU sobre un clúster Hadoop distribuido, orquestado con Docker Compose.
 
 ---
 
@@ -17,8 +17,10 @@
    - [Paso 3 — Importar HDFS → Hive](#paso-3--importar-hdfs--hive)
 7. [Replicación HDFS](#-replicación-hdfs)
 8. [Monitorización con Prometheus y Grafana](#-monitorización-con-prometheus-y-grafana)
-9. [Consultas Hive](#-consultas-hive)
-10. [Conclusión](#-conclusión)
+9. [Histórico de métricas en HDFS y Hive](#-histórico-de-métricas-en-hdfs-y-hive)
+10. [Predicción de CPU con R](#-predicción-de-cpu-con-r)
+11. [Consultas Hive](#-consultas-hive)
+12. [Conclusión](#-conclusión)
 
 ---
 
@@ -28,7 +30,7 @@
 
 ### Objetivo
 
-El proyecto implementa un pipeline **ETL** (Extract, Transform, Load) completo sobre datos de generación energética de plantas eléctricas. Todo el ecosistema corre sobre una red Docker aislada (`red-docker`), eliminando la necesidad de instalar software de Big Data en la máquina anfitriona.
+El proyecto implementa un pipeline **ETL** (Extract, Transform, Load) completo sobre datos de generación energética, junto a un flujo de análisis histórico del consumo de recursos del clúster. Todo el ecosistema corre sobre una red Docker aislada (`red-docker`), eliminando la necesidad de instalar Hadoop, Hive, Prometheus o R en la máquina anfitriona.
 
 ### Flujo ETL
 
@@ -45,44 +47,72 @@ El proyecto implementa un pipeline **ETL** (Extract, Transform, Load) completo s
 | **Transfer** | Sqoop 1.4.7 | Importa los datos desde MySQL hacia HDFS en formato de texto |
 | **Load** | Hive 4.0.0 | Crea una tabla externa sobre los datos HDFS para consultarlos con HiveQL |
 
+### Flujo de monitorización y predicción
+
+```
+cAdvisor ──► Prometheus ──► metricas-exporter ──► HDFS ──► Hive
+                    │                                      │
+                    └──────────► Grafana                   ▼
+                                                    prediccion-r ──► HDFS ──► Hive
+```
+
+| Etapa | Herramienta | Descripción |
+|---|---|---|
+| **Captura** | cAdvisor + Prometheus | Recoge CPU y memoria de los contenedores cada segundo |
+| **Visualización** | Grafana | Muestra un dashboard provisionado automáticamente |
+| **Histórico** | `metricas-exporter` | Exporta cada 5 minutos CSV de métricas a HDFS |
+| **Análisis** | Hive | Consulta métricas históricas almacenadas en HDFS |
+| **Predicción** | R | Proyecta uso futuro de CPU y guarda los resultados en HDFS/Hive |
+
 ### ¿Por qué Docker?
 
-Docker Compose permite levantar todos los servicios (Hadoop, Hive, MySQL, Sqoop, Prometheus, Grafana) con un único comando, garantizando reproducibilidad, aislamiento de red y configuración declarativa del clúster.
+Docker Compose permite levantar todos los servicios (Hadoop, Hive, MySQL, Sqoop, Prometheus, Grafana y el exportador histórico) con un único comando, garantizando reproducibilidad, aislamiento de red y configuración declarativa del clúster. La predicción R se ejecuta bajo demanda cuando ya existe histórico suficiente.
 
 ---
 
 ## 🏗️ Arquitectura del sistema
 
-El clúster está compuesto por **10 contenedores** distribuidos en una red bridge personalizada (`red-docker`):
+El clúster levanta **10 contenedores permanentes** distribuidos en una red bridge personalizada (`red-docker`) y un contenedor adicional bajo demanda para ejecutar predicciones con R:
 
 ### Diagrama de arquitectura
+```mermaid
+flowchart LR
+    subgraph Docker["Red Docker: red-docker"]
+        MYSQL["mysql-practica<br/>MySQL 8"]
+        NN["Nodo-principal<br/>NameNode + YARN + Sqoop"]
+        D1["datos-1<br/>DataNode"]
+        D2["datos-2<br/>DataNode"]
+        HIVE["hive<br/>HiveServer2"]
 
+        CAD["cadvisor<br/>Metricas de contenedores"]
+        NODE["node-exporter<br/>Metricas del sistema"]
+        PROM["prometheus<br/>Series temporales"]
+        GRAF["grafana<br/>Dashboard FS_USAGE"]
+
+        EXP["metricas-exporter<br/>Python / cada 5 min"]
+        R["prediccion-r<br/>R / bajo demanda"]
+    end
+
+    MYSQL -->|"Sqoop: generacion_energia"| NN
+    NN <-->|"HDFS replication=2"| D1
+    NN <-->|"HDFS replication=2"| D2
+    NN -->|"CSV energeticos en HDFS"| HIVE
+
+    CAD -->|"CPU y memoria cada 1 s"| PROM
+    NODE -->|"Metricas del sistema"| PROM
+    PROM -->|"Datasource provisionado"| GRAF
+
+    PROM -->|"query_range"| EXP
+    EXP -->|"CSV historicos<br/>/metricas/prometheus/"| NN
+    NN -->|"Tabla externa<br/>metricas_contenedores"| HIVE
+
+    NN -->|"Historico CPU en HDFS"| R
+    R -->|"Predicciones CPU<br/>/metricas/predicciones_cpu/"| NN
+    NN -->|"Tabla externa<br/>predicciones_cpu"| HIVE
 ```
-                        ┌─────────────────────────────────────────────────┐
-                        │                  red-docker                     │
-                        │                                                 │
-  ┌──────────────┐      │   ┌─────────────────┐    ┌──────────────────┐  │
-  │    Cliente   │      │   │  Nodo-principal  │    │   mysql-practica │  │
-  │  (navegador) │──────┼──►│  NameNode        │    │   MySQL 8.0      │  │
-  └──────────────┘      │   │  ResourceManager │◄───│   puerto 3306    │  │
-                        │   │  Sqoop 1.4.7     │    └──────────────────┘  │
-                        │   │  puerto 9870     │                          │
-                        │   │  puerto 8088     │                          │
-                        │   └────────┬─────────┘                         │
-                        │            │ HDFS replication=2                 │
-                        │     ┌──────┴──────┐                            │
-                        │     ▼             ▼                            │
-                        │  ┌───────┐   ┌───────┐                        │
-                        │  │datos-1│   │datos-2│                        │
-                        │  │DataN. │   │DataN. │                        │
-                        │  └───────┘   └───────┘                        │
-                        │                                                 │
-                        │   ┌──────┐  ┌──────────┐  ┌─────────┐        │
-                        │   │ hive │  │prometheus│  │ grafana │        │
-                        │   │10000 │  │  :9090   │  │  :3000  │        │
-                        │   └──────┘  └──────────┘  └─────────┘        │
-                        └─────────────────────────────────────────────────┘
-```
+![Arquitectura actual de RedDocker](resource/reddocker_architecture_diagram.svg)
+
+El diagrama separa el pipeline energético original, el histórico de métricas exportado periódicamente a HDFS y la predicción de CPU ejecutada bajo demanda con R.
 
 ### Descripción de contenedores
 
@@ -97,6 +127,8 @@ El clúster está compuesto por **10 contenedores** distribuidos en una red brid
 | `grafana` | `grafana/grafana` | **Visualización de métricas** en dashboards | `3000` |
 | `node-exporter` | `prom/node-exporter` | **Métricas del sistema** (CPU, RAM, disco) | `9100` |
 | `cadvisor` | `gcr.io/cadvisor/cadvisor` | **Métricas de contenedores** Docker | `8089` |
+| `metricas-exporter` | `python:3.12-slim` | **Exportación periódica** de CPU/memoria desde Prometheus a HDFS | — |
+| `prediccion-r` | `r-base:4.4.3` | **Predicción bajo demanda** de CPU futura mediante R | — |
 
 ### Detalle de los Dockerfiles personalizados
 
@@ -112,7 +144,22 @@ El clúster está compuesto por **10 contenedores** distribuidos en una red brid
 - Scripts de carga (`02-load-data.sh`) y generación de datos (`generar_dades.py`)
 
 **`hive/Dockerfile`** — Extiende la imagen oficial de Apache Hive 4.0.0 añadiendo:
-- Scripts de migración (`migrarEjecutor.sh`, `migrarHDFS.sql`) copiados a `/opt/scripts/` y `/`
+- Scripts de migración energética (`migrarEjecutor.sh`, `migrarHDFS.sql`)
+- Scripts para tablas y consultas históricas de métricas
+- Scripts para almacenar y analizar predicciones de CPU
+- Normalización de finales de línea para ejecutar correctamente scripts creados desde Windows
+
+**`metricas-exporter/Dockerfile`** — Ejecuta un script Python que:
+- Consulta la API `query_range` de Prometheus
+- Exporta CPU y memoria de los contenedores a CSV cada 5 minutos
+- Escribe los ficheros en HDFS mediante WebHDFS
+- Evita duplicar ventanas ya exportadas y reintenta si HDFS aún no está disponible
+
+**`prediccion-r/Dockerfile`** — Ejecuta un script R que:
+- Lee el histórico CSV almacenado en HDFS
+- Aplica regresión lineal temporal por contenedor sobre la métrica de CPU
+- Genera predicciones para los siguientes 15 minutos
+- Guarda un CSV predictivo en HDFS para consultarlo desde Hive
 
 ---
 
@@ -126,9 +173,11 @@ El clúster está compuesto por **10 contenedores** distribuidos en una red brid
 | **MySQL** | 8.0 | Base de datos origen con datos energéticos |
 | **Prometheus** | latest | Recolección y almacenamiento de métricas |
 | **Grafana** | latest | Visualización de métricas en tiempo real |
+| **cAdvisor** | latest | Métricas CPU/memoria de cada contenedor |
 | **Docker** | ≥ 24.x | Motor de contenedores |
 | **Docker Compose** | ≥ 2.x | Orquestación declarativa del clúster |
-| **Python** | 3.x | Generación de datos de prueba aleatorios |
+| **Python** | 3.x | Generación de datos y exportación Prometheus → HDFS |
+| **R** | 4.4.3 | Cálculo de predicciones de CPU |
 | **Java** | 8 | Runtime para Hadoop, Hive y Sqoop |
 
 ---
@@ -151,7 +200,15 @@ RedDocker/
 │   │   └── mysql-connector-java-8.0.28.jar
 │   └── scripts/
 │       ├── migrarEjecutor.sh       # Orquestador de la migración HDFS → Hive
-│       └── migrarHDFS.sql          # DDL y consultas HiveQL
+│       ├── migrarHDFS.sql          # DDL y consultas HiveQL del dataset
+│       ├── crearMetricasHive.sh    # Crea tabla externa del histórico
+│       ├── crearMetricasHive.sql
+│       ├── consultarMetricasHistoricas.sh
+│       ├── consultasMetricasHistoricas.sql
+│       ├── crearPrediccionesHive.sh
+│       ├── crearPrediccionesHive.sql
+│       ├── consultarPredicciones.sh
+│       └── consultasPredicciones.sql
 │
 ├── mysql/                          # Base de datos relacional origen
 │   ├── Dockerfile                  # MySQL 8 + Python 3
@@ -162,7 +219,24 @@ RedDocker/
 │       └── generar_dades.py        # Generador de registros aleatorios
 │
 ├── prometheus/
-│   └── prometheus.yml              # Configuración de scraping de métricas
+│   └── prometheus.yml              # Scraping de métricas cada segundo
+│
+├── grafana/
+│   ├── dashboards/
+│   │   └── containers-monitoring.json   # Dashboard incluido por defecto
+│   └── provisioning/
+│       ├── dashboards/dashboards.yml    # Carga automática del dashboard
+│       └── datasources/prometheus.yml   # Datasource Prometheus automático
+│
+├── metricas-exporter/
+│   ├── Dockerfile
+│   └── scripts/
+│       └── exportar_metricas.py    # Prometheus → CSV → HDFS
+│
+├── prediccion-r/
+│   ├── Dockerfile
+│   └── scripts/
+│       └── predecir_cpu.R          # Histórico CPU → predicción → HDFS
 │
 └── README.md
 ```
@@ -190,10 +264,12 @@ cd RedDocker
 ### Levantar el clúster
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
-Este comando construye las imágenes personalizadas (si no existen) y levanta los **10 contenedores** en background. La primera vez puede tardar varios minutos debido a la descarga de Sqoop y sus dependencias.
+Este comando construye las imágenes personalizadas y levanta los **10 contenedores permanentes** en background, incluido `metricas-exporter`. La primera vez puede tardar varios minutos debido a la descarga de Sqoop y sus dependencias.
+
+El contenedor `prediccion-r` no permanece activo: se ejecuta posteriormente bajo demanda con `docker compose run --rm prediccion-r`.
 
 ### Verificar que todos los contenedores están activos
 
@@ -209,6 +285,8 @@ Todos los servicios deben aparecer con estado `running`. Puedes acceder a las in
 | YARN ResourceManager | http://localhost:8088 |
 | Grafana | http://localhost:3000 |
 | Prometheus | http://localhost:9090 |
+| cAdvisor | http://localhost:8089 |
+| Node Exporter | http://localhost:9100/metrics |
 | HiveServer2 | `localhost:10000` (JDBC) |
 | Mysql | `localhost:3306` (JDBC) |
 
@@ -216,7 +294,7 @@ Todos los servicios deben aparecer con estado `running`. Puedes acceder a las in
 
 ## ⚙️ Configuración inicial paso a paso
 
-> ⚠️ **Importante:** Los tres pasos siguientes deben ejecutarse **en orden** y solo la primera vez que se levanta el clúster, o después de eliminar los volúmenes con `docker compose down -v`. El unico que se debe ejecutar cada vez que se lanza es el /migrarEjecutor.sh de hive
+> ⚠️ **Importante:** Los tres pasos siguientes inicializan el flujo energético y deben ejecutarse después de eliminar los volúmenes con `docker compose down -v`. El histórico de métricas se exporta automáticamente, pero sus tablas Hive se crean con scripts independientes descritos más adelante.
 
 ---
 
@@ -335,7 +413,7 @@ El script `migrarEjecutor.sh` orquesta las siguientes operaciones (definidas en 
 
 | Operación | Descripción |
 |---|---|
-| 🗄️ **Crear base de datos** | `CREATE DATABASE IF NOT EXISTS energiadb` en el metastore de Hive |
+| 🗄️ **Crear base de datos** | `CREATE DATABASE IF NOT EXISTS energiadb_hive` en el metastore de Hive |
 | 📋 **Crear tabla externa** | `CREATE EXTERNAL TABLE` apuntando a la ruta HDFS de Sqoop |
 | 🔗 **Vincular con HDFS** | La tabla externa no mueve datos; lee directamente desde `/sqoop/energiadb/generacion_energia/` |
 | 🔍 **Consultas de prueba** | Ejecuta `SELECT COUNT(*)` y `SELECT * LIMIT 10` para validar la integración |
@@ -401,23 +479,205 @@ Status: HEALTHY
 
 ## 📈 Monitorización con Prometheus y Grafana
 
-El clúster incluye una capa de observabilidad completa para monitorizar el rendimiento en tiempo real.
+El clúster incluye una capa de observabilidad para monitorizar el rendimiento de los contenedores y conservar datos para análisis posterior. Prometheus consulta los endpoints configurados cada **1 segundo** (`scrape_interval: 1s`).
 
 ### Componentes de monitorización
 
 | Servicio | Función | URL |
 |---|---|---|
-| **Prometheus** | Recolecta métricas de todos los exporters | http://localhost:9090 |
-| **Grafana** | Visualiza métricas en dashboards interactivos | http://localhost:3000 |
+| **Prometheus** | Recolecta y consulta series temporales | http://localhost:9090 |
+| **Grafana** | Visualiza el dashboard provisionado del proyecto | http://localhost:3000 |
 | **Node Exporter** | Métricas del sistema host (CPU, RAM, disco, red) | http://localhost:9100/metrics |
-| **cAdvisor** | Métricas individuales de cada contenedor Docker | http://localhost:8089 |
+| **cAdvisor** | CPU, memoria y red por contenedor Docker | http://localhost:8089 |
+| **metricas-exporter** | Guarda históricos CPU/memoria en HDFS | `docker compose logs -f metricas-exporter` |
 
-### Acceder a Grafana
+### Dashboard de Grafana provisionado automáticamente
 
 1. Abrir http://localhost:3000 en el navegador
 2. Credenciales por defecto: `admin` / `admin`
-3. Configurar Prometheus como datasource: `http://prometheus:9090`
-4. Importar dashboards para Hadoop, Docker o Node Exporter desde [grafana.com/dashboards](https://grafana.com/grafana/dashboards/)
+3. Abrir la carpeta `RedDocker` y seleccionar el dashboard `FS_USAGE`
+
+No es necesario configurar Prometheus ni importar el dashboard manualmente. Al iniciar Grafana:
+
+- `grafana/provisioning/datasources/prometheus.yml` crea el datasource `Prometheus` con UID estable `prometheus`.
+- `grafana/provisioning/dashboards/dashboards.yml` indica dónde cargar dashboards.
+- `grafana/dashboards/containers-monitoring.json` crea el dashboard por defecto.
+
+El dashboard incluye paneles para:
+
+| Panel | Métrica |
+|---|---|
+| `MEMORY_USAGE` | Memoria consumida por contenedor en MiB |
+| `CPU_USAGE` | Porcentaje de CPU por contenedor |
+| `NETWORK_RECEIVED` | Tráfico de red recibido |
+| `NETWORK_SEND` | Tráfico de red enviado |
+
+> ℹ️ Las métricas por contenedor utilizadas para el histórico provienen de **cAdvisor** a través de Prometheus. `node-exporter` aporta métricas generales del sistema, pero no sustituye a cAdvisor para separar `hive`, `Nodo-principal`, `mysql-practica`, `datos-1` y `datos-2`.
+
+---
+
+## 📚 Histórico de métricas en HDFS y Hive
+
+Además de mostrar datos en Grafana, el proyecto almacena un histórico consultable con Hive:
+
+```
+cAdvisor → Prometheus → metricas-exporter → HDFS → Hive
+```
+
+### Funcionamiento
+
+Prometheus captura CPU y memoria cada segundo. El contenedor `metricas-exporter` ejecuta periódicamente `exportar_metricas.py`, consulta la API HTTP de Prometheus y genera un fichero CSV por cada ventana completa de **5 minutos**.
+
+Cada fichero contiene filas con este formato:
+
+```csv
+2026-05-25 11:50:00,Nodo-principal,cpu_usage,85.9759257637444,percent
+2026-05-25 11:50:00,hive,memory_usage,406.86328125,MiB
+```
+
+Las columnas son:
+
+| Columna | Descripción |
+|---|---|
+| `instante` | Momento UTC de la muestra |
+| `contenedor` | Servicio Docker observado |
+| `metrica` | `cpu_usage` o `memory_usage` |
+| `valor` | Valor de la métrica |
+| `unidad` | `percent` o `MiB` |
+
+Los CSV quedan almacenados en HDFS:
+
+```text
+/metricas/prometheus/metricas_YYYYMMDDTHHMMSSZ_YYYYMMDDTHHMMSSZ.csv
+```
+
+Con cinco contenedores, dos métricas y muestras de un segundo, una ventana completa puede contener:
+
+```text
+5 contenedores × 2 métricas × 300 segundos = 3000 filas
+```
+
+### Comprobar la exportación automática
+
+```bash
+docker compose logs -f metricas-exporter
+docker exec Nodo-principal hdfs dfs -ls /metricas/prometheus
+```
+
+Un mensaje correcto de exportación tiene este aspecto:
+
+```text
+Exportadas 3000 filas (...) a /metricas/prometheus/metricas_....csv
+```
+
+Si aparece `Sin muestras para ...`, Prometheus no tenía datos disponibles para esa ventana; el exportador reintentará y almacenará las siguientes ventanas que sí tengan muestras.
+
+### Exportación manual
+
+Para forzar una ejecución sobre la última ventana completa:
+
+```bash
+docker compose run --rm --no-deps metricas-exporter --once
+```
+
+El script evita cargar de nuevo un fichero si esa ventana ya se encuentra en HDFS.
+
+### Crear la tabla externa Hive de métricas
+
+Los archivos viven en HDFS; Hive solamente define la estructura para consultarlos:
+
+```bash
+docker exec hive bash /crearMetricasHive.sh
+```
+
+El script crea:
+
+```sql
+metricas_hive.metricas_contenedores
+```
+
+apuntando a:
+
+```text
+hdfs://Nodo-principal:9000/metricas/prometheus/
+```
+
+Cada nuevo CSV que `metricas-exporter` escriba en esa ruta será visible en las siguientes consultas Hive sin recrear la tabla.
+
+### Consultar el histórico
+
+```bash
+docker exec -e MOMENTO_CARGA="2026-05-25 12:00:00" hive bash /consultarMetricasHistoricas.sh
+```
+
+Sustituye `MOMENTO_CARGA` por el momento en que ejecutaste una carga o consulta de prueba. El análisis incluye:
+
+- Media de memoria por contenedor.
+- Máximo de CPU por contenedor.
+- Evolución temporal de memoria.
+- Comparación de CPU y memoria antes/después de la carga.
+
+---
+
+## 🔮 Predicción de CPU con R
+
+La fase predictiva utiliza el histórico guardado en HDFS para proyectar el consumo futuro de CPU:
+
+```
+/metricas/prometheus/*.csv → prediccion-r (R) → /metricas/predicciones_cpu/*.csv → Hive
+```
+
+### Modelo utilizado
+
+El script `prediccion-r/scripts/predecir_cpu.R`:
+
+1. Descarga mediante WebHDFS los CSV históricos.
+2. Filtra la métrica `cpu_usage`.
+3. Entrena una regresión lineal temporal (`lm`) independiente por contenedor.
+4. Genera 15 predicciones futuras, una por minuto.
+5. Escribe las predicciones en HDFS para analizarlas desde Hive.
+
+Este modelo es deliberadamente simple e interpretable para la práctica. La predicción será más representativa cuanto mayor sea el histórico recogido y cuanto más claros sean los periodos de carga que se quieran estudiar.
+
+### Ejecutar una predicción
+
+El contenedor R se ejecuta bajo demanda, después de disponer de suficientes métricas históricas:
+
+```bash
+docker compose build prediccion-r
+docker compose run --rm prediccion-r
+```
+
+La salida se almacena en:
+
+```text
+/metricas/predicciones_cpu/prediccion_cpu_YYYYMMDDTHHMMSSZ.csv
+```
+
+### Crear la tabla predictiva en Hive
+
+```bash
+docker exec hive bash /crearPrediccionesHive.sh
+```
+
+El script crea la tabla externa:
+
+```sql
+metricas_hive.predicciones_cpu
+```
+
+### Analizar tendencias futuras
+
+```bash
+docker exec hive bash /consultarPredicciones.sh
+```
+
+Las consultas toman la última ejecución de R y muestran:
+
+- CPU mínima, media y máxima predicha por contenedor.
+- Variación de CPU por minuto.
+- Clasificación de tendencia: `tendencia_ascendente`, `tendencia_descendente` o `tendencia_estable`.
+- Serie temporal futura con las predicciones minuto a minuto.
 
 ---
 
@@ -435,39 +695,38 @@ beeline -u jdbc:hive2://localhost:10000
 **Ver los primeros 10 registros:**
 
 ```sql
-SELECT * FROM energiadb.generacion_energia_mysql LIMIT 10;
+SELECT * FROM energiadb_hive.generacion_energia_mysql LIMIT 10;
 ```
 
 **Contar el total de registros importados:**
 
 ```sql
-SELECT COUNT(*) FROM energiadb.generacion_energia_mysql;
+SELECT COUNT(*) FROM energiadb_hive.generacion_energia_mysql;
 ```
 
-**Producción total por planta:**
+**Generación total registrada:**
 
 ```sql
-SELECT id_planta, SUM(produccion_kwh) AS total_produccion
-FROM energiadb.generacion_energia_mysql
-GROUP BY id_planta
-ORDER BY total_produccion DESC;
+SELECT SUM(generacion) AS total_generacion
+FROM energiadb_hive.generacion_energia_mysql;
 ```
 
 **Filtrar por rango de fechas:**
 
 ```sql
 SELECT *
-FROM energiadb.generacion_energia_mysql
-WHERE fecha BETWEEN '2024-01-01' AND '2024-12-31'
+FROM energiadb_hive.generacion_energia_mysql
+WHERE fecha BETWEEN '2024-01-01 00:00:00' AND '2024-12-31 23:59:59'
 ORDER BY fecha;
 ```
 
-**Producción media por tipo de energía:**
+**Consumo y generación medios por hora del día:**
 
 ```sql
-SELECT tipo_energia, AVG(produccion_kwh) AS media_produccion
-FROM energiadb.generacion_energia_mysql
-GROUP BY tipo_energia;
+SELECT hora_dia, AVG(consumo) AS consumo_medio, AVG(generacion) AS generacion_media
+FROM energiadb_hive.generacion_energia_mysql
+GROUP BY hora_dia
+ORDER BY hora_dia;
 ```
 
 ---
@@ -486,7 +745,25 @@ docker compose down
 docker compose down -v
 ```
 
-> ⚠️ Esto eliminará todos los datos persistentes (MySQL, HDFS NameNode, Prometheus, Grafana). Será necesario repetir los 3 pasos de configuración inicial.
+> ⚠️ Esto elimina MySQL, HDFS, las series temporales de Prometheus y la configuración almacenada en el volumen de Grafana. Grafana volverá a crear su datasource y dashboard desde los archivos provisionados, pero será necesario volver a cargar el dataset energético, esperar nuevas exportaciones de métricas y recrear las tablas Hive externas.
+
+Después de un reset completo, el orden recomendado es:
+
+```bash
+docker compose up -d --build
+docker exec mysql-practica bash /02-load-data.sh
+docker exec Nodo-principal bash /importarMYSQL.sh
+docker exec hive bash /migrarEjecutor.sh
+docker exec hive bash /crearMetricasHive.sh
+```
+
+Cuando `metricas-exporter` ya haya almacenado histórico suficiente:
+
+```bash
+docker compose run --rm prediccion-r
+docker exec hive bash /crearPrediccionesHive.sh
+docker exec hive bash /consultarPredicciones.sh
+```
 
 ### Ver logs de un servicio
 
@@ -494,6 +771,7 @@ docker compose down -v
 docker compose logs -f Nodo-principal
 docker compose logs -f hive
 docker compose logs -f mysql-practica
+docker compose logs -f metricas-exporter
 ```
 
 ### Reconstruir imágenes tras modificar un Dockerfile
@@ -518,14 +796,17 @@ RedDocker demuestra cómo construir un entorno de Big Data distribuido completam
 | **Pipeline ETL** | Diseño y ejecución de un flujo Extract → Transfer → Load real |
 | **Docker distribuido** | Orquestación de múltiples servicios con Docker Compose y redes bridge |
 | **Monitorización** | Observabilidad del clúster con Prometheus + Grafana |
+| **Provisioning Grafana** | Creación automática de datasource y dashboard tras iniciar Docker |
+| **Histórico de métricas** | Persistencia de CPU y memoria de Prometheus en HDFS para consultas Hive |
+| **Predicción con R** | Proyección futura de CPU y análisis de tendencias desde Hive |
 | **Procesamiento Big Data** | Separación entre almacenamiento (HDFS), procesamiento (YARN) y consulta (Hive) |
 
-Esta arquitectura replica en miniatura los patrones que se usan en clústeres Hadoop en producción, proporcionando una base sólida para comprender el ecosistema Hadoop y los principios del procesamiento distribuido de grandes volúmenes de datos.
+Esta arquitectura replica en miniatura patrones de plataformas de datos reales: ingestión relacional, almacenamiento distribuido, consulta SQL, monitorización, persistencia histórica de métricas y un proceso analítico predictivo reproducible.
 
 ---
 
 <div align="center">
 
-**RedDocker** · Práctica Big Data · Docker + Hadoop + Hive + Sqoop
+**RedDocker** · Práctica Big Data · Docker + Hadoop + Hive + Sqoop + Prometheus + Grafana + R
 
 </div>
