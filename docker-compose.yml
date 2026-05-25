@@ -86,6 +86,27 @@ services:
     networks:
       - red-docker
 
+  metricas-exporter:
+    build: ./metricas-exporter
+    container_name: metricas-exporter
+    hostname: metricas-exporter
+    restart: unless-stopped
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+      - WEBHDFS_URL=http://Nodo-principal:9870/webhdfs/v1
+      - HDFS_BASE_PATH=/metricas/prometheus
+      - EXPORT_CONTAINERS=Nodo-principal|mysql-practica|hive|datos-1|datos-2
+      - EXPORT_WINDOW_SECONDS=900
+      - EXPORT_STEP_SECONDS=60
+      - EXPORT_INTERVAL_SECONDS=900
+      - EXPORT_STARTUP_DELAY_SECONDS=10
+      - EXPORT_RETRY_SECONDS=30
+    depends_on:
+      - prometheus
+      - Nodo-principal
+    networks:
+      - red-docker
+
   grafana:
     image: grafana/grafana
     container_name: grafana
